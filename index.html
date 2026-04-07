@@ -862,29 +862,43 @@ function parseCSV(text) {
 function loadFromSheet() {
   const overlay = document.getElementById('loadingOverlay');
   if (overlay) overlay.style.display = 'flex';
-  
-  const proxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(SHEET_CSV_URL);
-  fetch(proxy)
-    .then(r => { if (!r.ok) throw new Error('網路錯誤'); return r.text(); })
-    .then(text => {
-      const sheetPromos = parseCSV(text);
-      // 本地新增的（非試算表）保留，試算表資料以試算表為主
-      const localPromos = promos.filter(p => !p.fromSheet);
-      promos = [...sheetPromos, ...localPromos];
-      try { removedCount = parseInt(localStorage.getItem('removedCount') || '0'); } catch(e) {}
-      if (overlay) overlay.style.display = 'none';
-      cleanExpired();
-      render();
-      showToast(`✅ 已從試算表載入 ${sheetPromos.length} 筆活動`);
-    })
-    .catch(err => {
-      console.error(err);
-      if (overlay) overlay.style.display = 'none';
-      // 若載入失敗，改用 localStorage 備援
-      try { promos = JSON.parse(localStorage.getItem('promos') || '[]'); } catch(e) { promos = []; }
-      cleanExpired();
-      render();
-      showToast('⚠️ 試算表載入失敗，顯示本機資料');
+
+  function onSuccess(text) {
+    const sheetPromos = parseCSV(text);
+    const localPromos = promos.filter(p => !p.fromSheet);
+    promos = [...sheetPromos, ...localPromos];
+    try { removedCount = parseInt(localStorage.getItem('removedCount') || '0'); } catch(e) {}
+    if (overlay) overlay.style.display = 'none';
+    cleanExpired();
+    render();
+    showToast('✅ 已從試算表載入 ' + sheetPromos.length + ' 筆活動');
+  }
+
+  function onError(err) {
+    console.error('載入失敗:', err);
+    if (overlay) overlay.style.display = 'none';
+    try { promos = JSON.parse(localStorage.getItem('promos') || '[]'); } catch(e) { promos = []; }
+    cleanExpired();
+    render();
+    showToast('⚠️ 試算表載入失敗，顯示本機資料');
+  }
+
+  // 方法1: 直接 fetch（部分瀏覽器支援）
+  fetch(SHEET_CSV_URL)
+    .then(r => { if (!r.ok) throw new Error('direct fetch failed'); return r.text(); })
+    .then(text => { if (text.includes('<html')) throw new Error('got html'); onSuccess(text); })
+    .catch(() => {
+      // 方法2: corsproxy.io
+      fetch('https://corsproxy.io/?' + encodeURIComponent(SHEET_CSV_URL))
+        .then(r => { if (!r.ok) throw new Error('corsproxy failed'); return r.text(); })
+        .then(text => { if (text.includes('<html')) throw new Error('got html'); onSuccess(text); })
+        .catch(() => {
+          // 方法3: allorigins
+          fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(SHEET_CSV_URL))
+            .then(r => { if (!r.ok) throw new Error('allorigins failed'); return r.text(); })
+            .then(text => { if (text.includes('<html')) throw new Error('got html'); onSuccess(text); })
+            .catch(onError);
+        });
     });
 }
 
