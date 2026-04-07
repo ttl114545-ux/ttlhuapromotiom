@@ -877,27 +877,45 @@ function loadFromSheet() {
   function onError(err) {
     console.error('載入失敗:', err);
     if (overlay) overlay.style.display = 'none';
-    try { promos = JSON.parse(localStorage.getItem('promos') || '[]'); } catch(e) { promos = []; }
+    promos = [];
+    removedCount = 0;
+    localStorage.setItem('removedCount', '0');
     cleanExpired();
     render();
-    showToast('⚠️ 試算表載入失敗，顯示本機資料');
+    showToast('⚠️ 試算表載入失敗，請重新整理');
   }
 
-  // 方法1: 直接 fetch（部分瀏覽器支援）
-  fetch(SHEET_CSV_URL)
-    .then(r => { if (!r.ok) throw new Error('direct fetch failed'); return r.text(); })
-    .then(text => { if (text.includes('<html')) throw new Error('got html'); onSuccess(text); })
-    .catch(() => {
-      // 方法2: corsproxy.io
-      fetch('https://corsproxy.io/?' + encodeURIComponent(SHEET_CSV_URL))
-        .then(r => { if (!r.ok) throw new Error('corsproxy failed'); return r.text(); })
-        .then(text => { if (text.includes('<html')) throw new Error('got html'); onSuccess(text); })
-        .catch(() => {
-          // 方法3: allorigins
-          fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(SHEET_CSV_URL))
-            .then(r => { if (!r.ok) throw new Error('allorigins failed'); return r.text(); })
-            .then(text => { if (text.includes('<html')) throw new Error('got html'); onSuccess(text); })
-            .catch(onError);
+  // 方法1: corsproxy.io
+  console.log('[Sheet] 嘗試 corsproxy.io...');
+  fetch('https://corsproxy.io/?' + encodeURIComponent(SHEET_CSV_URL))
+    .then(r => { if (!r.ok) throw new Error('corsproxy status ' + r.status); return r.text(); })
+    .then(text => {
+      console.log('[Sheet] corsproxy 回傳前100字:', text.slice(0,100));
+      if (text.trim().startsWith('<')) throw new Error('got html not csv');
+      onSuccess(text);
+    })
+    .catch(e1 => {
+      console.warn('[Sheet] corsproxy 失敗:', e1.message, '改用 allorigins...');
+      fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(SHEET_CSV_URL))
+        .then(r => { if (!r.ok) throw new Error('allorigins status ' + r.status); return r.text(); })
+        .then(text => {
+          console.log('[Sheet] allorigins 回傳前100字:', text.slice(0,100));
+          if (text.trim().startsWith('<')) throw new Error('got html not csv');
+          onSuccess(text);
+        })
+        .catch(e2 => {
+          console.warn('[Sheet] allorigins 失敗:', e2.message, '改用 htmlescape proxy...');
+          fetch('https://thingproxy.freeboard.io/fetch/' + SHEET_CSV_URL)
+            .then(r => { if (!r.ok) throw new Error('thingproxy status ' + r.status); return r.text(); })
+            .then(text => {
+              console.log('[Sheet] thingproxy 回傳前100字:', text.slice(0,100));
+              if (text.trim().startsWith('<')) throw new Error('got html not csv');
+              onSuccess(text);
+            })
+            .catch(e3 => {
+              console.error('[Sheet] 全部 proxy 失敗:', e3.message);
+              onError(e3);
+            });
         });
     });
 }
@@ -1183,16 +1201,11 @@ function getFiltered() {
 
 function cleanExpired() {
   const before = promos.length;
-  const expired = promos.filter(p => p.endDate && new Date(p.endDate) < new Date());
   promos = promos.filter(p => !p.endDate || new Date(p.endDate) >= new Date());
   const removed = before - promos.length;
+  // 已自動移除數字 = 本次載入中實際過期的數量（不累積）
+  removedCount = removed;
   if (removed > 0) {
-    // 只計算非試算表來源的移除數（試算表資料每次重載都重新計算，不累加）
-    const localRemoved = expired.filter(p => !p.fromSheet).length;
-    if (localRemoved > 0) {
-      removedCount += localRemoved;
-      localStorage.setItem('removedCount', removedCount);
-    }
     showToast('🗑 已自動隱藏 ' + removed + ' 個到期活動');
   }
 }
