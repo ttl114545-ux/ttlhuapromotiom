@@ -391,7 +391,7 @@
 </head>
 <body>
 
-<div class="loading-overlay" id="loadingOverlay">
+<div class="loading-overlay" id="loadingOverlay" style="display:none;">
   <div class="loading-box">
     <div class="spinner"></div>
     <div class="loading-text">正在解析活動方案...</div>
@@ -860,7 +860,9 @@ function parseCSV(text) {
 }
 
 function loadFromSheet() {
-  showLoading(true);
+  const overlay = document.getElementById('loadingOverlay');
+  if (overlay) overlay.style.display = 'flex';
+  
   const proxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(SHEET_CSV_URL);
   fetch(proxy)
     .then(r => { if (!r.ok) throw new Error('網路錯誤'); return r.text(); })
@@ -870,14 +872,14 @@ function loadFromSheet() {
       const localPromos = promos.filter(p => !p.fromSheet);
       promos = [...sheetPromos, ...localPromos];
       try { removedCount = parseInt(localStorage.getItem('removedCount') || '0'); } catch(e) {}
-      showLoading(false);
+      if (overlay) overlay.style.display = 'none';
       cleanExpired();
       render();
       showToast(`✅ 已從試算表載入 ${sheetPromos.length} 筆活動`);
     })
     .catch(err => {
       console.error(err);
-      showLoading(false);
+      if (overlay) overlay.style.display = 'none';
       // 若載入失敗，改用 localStorage 備援
       try { promos = JSON.parse(localStorage.getItem('promos') || '[]'); } catch(e) { promos = []; }
       cleanExpired();
@@ -1103,7 +1105,8 @@ function parsePromos() {
     showToast('請輸入活動方案文字'); return;
   }
 
-  showLoading(true);
+  const overlay = document.getElementById('loadingOverlay');
+  if (overlay) { overlay.querySelector && (overlay.querySelector('.loading-text') ? overlay.querySelector('.loading-text').textContent='正在解析活動方案...' : null); overlay.style.display='flex'; }
 
   setTimeout(() => {
     try {
@@ -1144,7 +1147,7 @@ function parsePromos() {
       console.error(e);
       showToast('⚠️ 解析失敗，請確認格式後重試');
     } finally {
-      showLoading(false);
+      if (overlay) overlay.style.display = 'none';
     }
   }, 400);
 }
