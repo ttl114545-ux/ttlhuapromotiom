@@ -1561,9 +1561,14 @@ function renderCard(p) {
     if (autoConsumer.length) highlightContent += sectionItems('🛒', '消費者活動', autoConsumer);
     if (autoOther.length) highlightContent += sectionItems('💰', '進貨折扣', autoOther);
   } else {
+    // 渲染時二次過濾：bonuses 裡含消費者關鍵字的條目移到消費者活動
+    const consumerKeyRe = /消費者|搭贈活動/;
+    const renderBonuses = (p.bonuses || []).filter(item => !consumerKeyRe.test(item));
+    const extraConsumerFromBonuses = (p.bonuses || []).filter(item => consumerKeyRe.test(item));
+    const renderConsumer = [...(p.consumerActivities || []), ...extraConsumerFromBonuses];
     highlightContent += sectionItems('💰', '進貨折扣', p.promoMethods);
-    highlightContent += sectionItems('🎁', '大購額加碼獎勵', p.bonuses);
-    highlightContent += sectionItems('🛒', '消費者活動', p.consumerActivities);
+    highlightContent += sectionItems('🎁', '大購額加碼獎勵', renderBonuses);
+    highlightContent += sectionItems('🛒', '消費者活動', renderConsumer);
   }
   
   const highlightHtml = highlightContent
