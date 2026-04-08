@@ -226,17 +226,17 @@
   .row-text.text-xs { font-size: 11px; line-height: 1.5; }
 
   /* 卡片文字整體縮放 */
-  .card-text-sm .row-text { font-size: 12px; line-height: 1.55; }
-  .card-text-sm .row-item { padding: 8px 12px; margin-bottom: 6px; }
+  .card-text-sm .row-text { font-size: 12.5px; line-height: 1.58; }
+  .card-text-sm .row-item { padding: 9px 13px; margin-bottom: 7px; }
   .card-text-sm .card-title { font-size: 15px; }
-  .card-text-sm .period-text { font-size: 12px; }
-  .card-text-xs .row-text { font-size: 11px; line-height: 1.5; }
-  .card-text-xs .row-item { padding: 6px 10px; margin-bottom: 4px; }
-  .card-text-xs .row-num { width: 19px; height: 19px; font-size: 10px; }
-  .card-text-xs .card-title { font-size: 14px; }
-  .card-text-xs .period-text { font-size: 11.5px; }
-  .card-text-xs .hl-badge { font-size: 11px; padding: 4px 9px; }
-  .card-text-xs .highlights-wrap { padding: 12px 14px; }
+  .card-text-sm .period-text { font-size: 12.5px; }
+  .card-text-xs .row-text { font-size: 12px; line-height: 1.55; }
+  .card-text-xs .row-item { padding: 8px 11px; margin-bottom: 6px; }
+  .card-text-xs .row-num { width: 20px; height: 20px; font-size: 10.5px; }
+  .card-text-xs .card-title { font-size: 14.5px; }
+  .card-text-xs .period-text { font-size: 12px; }
+  .card-text-xs .hl-badge { font-size: 11.5px; padding: 4px 10px; }
+  .card-text-xs .highlights-wrap { padding: 13px 15px; }
 
   /* 促銷重點灰色大外框 */
   .highlights-wrap { background: #f1f5f9; border-radius: 12px; padding: 16px 18px; margin-top: 18px; }
@@ -1321,9 +1321,15 @@ function parseActivityBlock(block, idx, attachedImages) {
   const consumerRaw = extractMultilineField(block, '消費者活動', '消費者促銷', '消費者加碼', '消費者方案', '消費者搭贈活動');
   
   let { isMixable: mixPromo, cleanedArray: promoMethods } = cleanMixableText(promoMethodRaw ? extractBullets(promoMethodRaw) : []);
-  let { isMixable: mixBonus, cleanedArray: bonuses } = cleanMixableText(bonusRaw ? extractBullets(bonusRaw) : []);
-  let { isMixable: mixConsumer, cleanedArray: consumerActivities } = cleanMixableText(consumerRaw ? extractBullets(consumerRaw) : []);
+  let { isMixable: mixBonus, cleanedArray: rawBonuses } = cleanMixableText(bonusRaw ? extractBullets(bonusRaw) : []);
+  let { isMixable: mixConsumer, cleanedArray: rawConsumer } = cleanMixableText(consumerRaw ? extractBullets(consumerRaw) : []);
   let { isMixable: mixItems, cleanedArray: itemsList } = cleanMixableText(itemsRaw ? extractBullets(itemsRaw) : []);
+
+  // 二次分類：把 bonuses 裡帶有「消費者」相關關鍵字的條目移到 consumerActivities
+  const consumerKeyRe = /消費者|搭贈活動|消費者搭贈/;
+  const extraConsumer = rawBonuses.filter(item => consumerKeyRe.test(item));
+  const bonuses = rawBonuses.filter(item => !consumerKeyRe.test(item));
+  const consumerActivities = [...rawConsumer, ...extraConsumer];
 
   // 只要任何一個區域出現過「可混搭」，就視為全域可混搭
   const mixable = mixPromo || mixBonus || mixConsumer || mixItems;
@@ -1511,7 +1517,8 @@ function renderCard(p) {
   const renderRowItem = (text, index, isWhite = false) => {
     if (!text) return '';
     const len = text.length;
-    const sizeClass = len > 60 ? 'text-xs' : len > 35 ? 'text-sm' : '';
+    // 只在文字極長時才個別縮小，避免與卡片整體縮放疊加後過小
+    const sizeClass = len > 120 ? 'text-xs' : len > 80 ? 'text-sm' : '';
     return `<div class="row-item ${isWhite ? 'white-bg' : ''}">
       <div class="row-num">${index + 1}</div>
       <div class="row-text ${sizeClass}">${text}</div>
@@ -1546,7 +1553,7 @@ function renderCard(p) {
       const t = item || '';
       if (/促銷方式|活動方式|優惠內容|進貨優惠|進貨折扣/.test(t)) autoPromo.push(item);
       else if (/加碼獎勵|大購額加碼獎勵|事後折讓/.test(t)) autoBonus.push(item);
-      else if (/消費者活動|消費者促銷|消費者加碼|消費者方案|消費者搭贈活動/.test(t)) autoConsumer.push(item);
+      else if (/消費者活動|消費者促銷|消費者加碼|消費者方案|消費者搭贈活動|消費者搭贈|消費者/.test(t)) autoConsumer.push(item);
       else autoOther.push(item);
     });
     if (autoPromo.length) highlightContent += sectionItems('💰', '進貨折扣', autoPromo);
@@ -1583,8 +1590,8 @@ function renderCard(p) {
     ...(p.consumerActivities || []),
     ...(p.highlights || [])
   ].join('').length;
-  const cardFontScale = totalTextLen > 600 ? 'card-text-xs'
-                      : totalTextLen > 300 ? 'card-text-sm'
+  const cardFontScale = totalTextLen > 700 ? 'card-text-xs'
+                      : totalTextLen > 400 ? 'card-text-sm'
                       : '';
   return `<div class="promo-card ${cardCls} ${cardFontScale} ${isExpired?'expired':''}" id="card-${p.id}">
     <div class="card-body">
