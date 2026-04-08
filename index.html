@@ -985,11 +985,12 @@ function parseCSV(text) {
 
     const channelRaw = get('channel') || 'traditional';
     const channelMap = { '傳統通路':'traditional', 'traditional':'traditional', '特販通路':'special', 'special':'special', '量販通路':'bulk', 'bulk':'bulk' };
-    const channels = channelRaw.split('|').map(c => channelMap[c.trim()] || 'traditional');
+    const splitMulti = (str) => str.split(/[|,]/).map(s => s.trim()).filter(Boolean);
+    const channels = (() => { const arr = splitMulti(channelRaw).map(c => channelMap[c]).filter(Boolean); return arr.length ? arr : ['traditional']; })();
 
     const productRaw = get('product') || 'other';
     const productMap = { '啤酒':'beer','beer':'beer','烈酒':'spirit','spirit':'spirit','菸':'cig','cig':'cig','泡麵':'noodle','noodle':'noodle','其他':'other','other':'other' };
-    const products = productRaw.split('|').map(p => productMap[p.trim()] || 'other');
+    const products = (() => { const arr = splitMulti(productRaw).map(p => productMap[p]).filter(Boolean); return arr.length ? arr : ['other']; })();
 
     return {
       id: get('id') || `sheet_${idx}`,
