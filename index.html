@@ -642,6 +642,13 @@
         <div class="stat-icon">⚙️</div>
         <div class="stat-mgmt-label">活動方案管理</div>
       </div>
+      <div class="stat-pill clickable" onclick="loadFromSheet(false)" title="立即從試算表重新載入" style="display:flex;align-items:center;gap:6px;padding:8px 14px;">
+        <span style="font-size:14px;">🔄</span>
+        <div>
+          <div class="stat-mgmt-label">同步試算表</div>
+          <div id="sheetStatus" style="font-size:10px;color:var(--text-muted);margin-top:1px;">載入中…</div>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -1143,68 +1150,81 @@ function parseCSV(text) {
   }).filter(p => p && p.title);
 }
 
-function loadFromSheet() {
+let lastSheetLoadTime = null;
+
+function updateSheetStatus(success) {
+  const el = document.getElementById('sheetStatus');
+  if (!el) return;
+  if (success) {
+    lastSheetLoadTime = new Date();
+    const hh = String(lastSheetLoadTime.getHours()).padStart(2,'0');
+    const mm = String(lastSheetLoadTime.getMinutes()).padStart(2,'0');
+    el.textContent = '上次更新 ' + hh + ':' + mm;
+    el.style.color = 'var(--text-muted)';
+  } else {
+    el.textContent = '⚠️ 同步失敗';
+    el.style.color = '#ef4444';
+  }
+}
+
+function loadFromSheet(silent) {
   const overlay = document.getElementById('loadingOverlay');
-  if (overlay) overlay.style.display = 'flex';
+  if (!silent && overlay) overlay.style.display = 'flex';
+
+  // cache-busting
+  const cacheBust = '&t=' + Date.now();
+  const urls = [
+    'https://corsproxy.io/?' + encodeURIComponent(SHEET_CSV_URL + cacheBust),
+    'https://api.allorigins.win/raw?url=' + encodeURIComponent(SHEET_CSV_URL + cacheBust),
+    'https://thingproxy.freeboard.io/fetch/' + SHEET_CSV_URL + cacheBust,
+  ];
 
   function onSuccess(text) {
     const sheetPromos = parseCSV(text);
+    if (!sheetPromos.length) { onError(new Error('empty result')); return; }
     const localPromos = promos.filter(p => !p.fromSheet);
     promos = [...sheetPromos, ...localPromos];
     try { removedCount = parseInt(localStorage.getItem('removedCount') || '0'); } catch(e) {}
     if (overlay) overlay.style.display = 'none';
     cleanExpired();
     render();
-    showToast('✅ 已從試算表載入 ' + sheetPromos.length + ' 筆活動');
+    updateSheetStatus(true);
+    if (!silent) showToast('✅ 已從試算表載入 ' + sheetPromos.length + ' 筆活動');
   }
 
   function onError(err) {
-    console.error('載入失敗:', err);
+    console.error('[Sheet] 全部 proxy 失敗:', err.message);
     if (overlay) overlay.style.display = 'none';
-    promos = [];
-    removedCount = 0;
-    localStorage.setItem('removedCount', '0');
-    cleanExpired();
-    render();
-    showToast('⚠️ 試算表載入失敗，請重新整理');
+    // ⚠️ 不清空現有資料，保留上次成功的資料
+    updateSheetStatus(false);
+    if (!silent) showToast('⚠️ 試算表同步失敗，顯示上次資料');
   }
 
-  // 方法1: corsproxy.io
-  console.log('[Sheet] 嘗試 corsproxy.io...');
-  fetch('https://corsproxy.io/?' + encodeURIComponent(SHEET_CSV_URL))
-    .then(r => { if (!r.ok) throw new Error('corsproxy status ' + r.status); return r.text(); })
-    .then(text => {
-      console.log('[Sheet] corsproxy 回傳前100字:', text.slice(0,100));
-      if (text.trim().startsWith('<')) throw new Error('got html not csv');
-      onSuccess(text);
-    })
-    .catch(e1 => {
-      console.warn('[Sheet] corsproxy 失敗:', e1.message, '改用 allorigins...');
-      fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(SHEET_CSV_URL))
-        .then(r => { if (!r.ok) throw new Error('allorigins status ' + r.status); return r.text(); })
-        .then(text => {
-          console.log('[Sheet] allorigins 回傳前100字:', text.slice(0,100));
-          if (text.trim().startsWith('<')) throw new Error('got html not csv');
-          onSuccess(text);
-        })
-        .catch(e2 => {
-          console.warn('[Sheet] allorigins 失敗:', e2.message, '改用 htmlescape proxy...');
-          fetch('https://thingproxy.freeboard.io/fetch/' + SHEET_CSV_URL)
-            .then(r => { if (!r.ok) throw new Error('thingproxy status ' + r.status); return r.text(); })
-            .then(text => {
-              console.log('[Sheet] thingproxy 回傳前100字:', text.slice(0,100));
-              if (text.trim().startsWith('<')) throw new Error('got html not csv');
-              onSuccess(text);
-            })
-            .catch(e3 => {
-              console.error('[Sheet] 全部 proxy 失敗:', e3.message);
-              onError(e3);
-            });
-        });
-    });
+  // 依序嘗試各 proxy
+  function tryNext(idx) {
+    if (idx >= urls.length) { onError(new Error('all proxies failed')); return; }
+    const url = urls[idx];
+    console.log('[Sheet] 嘗試 proxy', idx, url.split('?')[0]);
+    fetch(url)
+      .then(r => { if (!r.ok) throw new Error('status ' + r.status); return r.text(); })
+      .then(text => {
+        if (text.trim().startsWith('<') || text.trim().length < 10) throw new Error('invalid response');
+        onSuccess(text);
+      })
+      .catch(e => {
+        console.warn('[Sheet] proxy', idx, '失敗:', e.message);
+        tryNext(idx + 1);
+      });
+  }
+
+  tryNext(0);
 }
 
-document.addEventListener('DOMContentLoaded', () => { loadFromSheet(); setInterval(loadFromSheet, 5 * 60 * 1000); });
+document.addEventListener('DOMContentLoaded', () => {
+  loadFromSheet(false);
+  // 每 3 分鐘靜默更新
+  setInterval(() => loadFromSheet(true), 3 * 60 * 1000);
+});
 
 // ── Image handling ─────────────────────────────────────────
 function handleImageUpload(e) {
