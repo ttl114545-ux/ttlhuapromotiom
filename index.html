@@ -1578,13 +1578,21 @@ function renderCard(p) {
   }
   
   // 加上備註區塊
-  const notesHtml = p.notes
-    ? `<div class="hl-section" style="margin-top:4px;">
-        <div class="row-item white-bg" style="margin-bottom:0;background:#fffbeb;border-left:3px solid #f59e0b;">
-          <div class="row-text" style="font-size:12px;color:#78350f;white-space:pre-wrap;">${p.notes.replace(/\\n/g,'\n')}</div>
-        </div>
-      </div>`
-    : '';
+  const notesHtml = (() => {
+    if (!p.notes) return '';
+    const lines = p.notes.split('\n').map(l => l.trim()).filter(Boolean);
+    const itemsHtml = lines.map(line =>
+      '<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:5px;">' +
+      '<span style="flex-shrink:0;color:#d97706;font-size:13px;margin-top:1px;">•</span>' +
+      '<span style="font-size:12px;color:#78350f;line-height:1.6;">' + line + '</span>' +
+      '</div>'
+    ).join('');
+    return '<div class="hl-section" style="margin-top:4px;">' +
+      '<div class="hl-badge" style="margin-bottom:10px;">📝 備註</div>' +
+      '<div class="row-item white-bg" style="background:#fffbeb;border-left:3px solid #f59e0b;display:block;padding:10px 14px;">' +
+      itemsHtml +
+      '</div></div>';
+  })();
   const highlightHtml = (highlightContent || notesHtml)
     ? `<div class="highlights-wrap"><div class="hl-main-title">✦ 促銷重點</div>${highlightContent}${notesHtml}</div>`
     : '';
